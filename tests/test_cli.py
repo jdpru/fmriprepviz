@@ -247,6 +247,19 @@ def test_mp4_output(derivatives, tmp_path):
     assert output.is_file()
 
 
+def test_html_title_names_the_subject(derivatives, tmp_path):
+    """Every viewer tab currently reads the generic 'fmriprepviz'; with
+    several subjects' viewers open at once, the browser tab bar gives no
+    way to tell them apart.
+    """
+    output = tmp_path / "qc.gif"
+    main(
+        [str(derivatives), "--subject", "01", "-o", str(output), "--n-cuts", "3"]
+    )
+    html_text = output.with_suffix(".html").read_text()
+    assert "<title>fmriprepviz sub-01</title>" in html_text
+
+
 def test_missing_output_directory_is_created(derivatives, tmp_path):
     """-o subdir/qc.gif is an ordinary thing to type; the parent directory
     not existing yet should not be treated as an error.
