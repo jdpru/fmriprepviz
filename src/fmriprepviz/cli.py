@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import nibabel as nib
+from nibabel.filebasedimages import ImageFileError
 from nilearn.image.resampling import BoundingBoxError
 
 from fmriprepviz.cuts import DEFAULT_N_CUTS, select_cuts
@@ -85,13 +86,13 @@ def main(argv=None) -> int:
         # otherwise catch it first and print nilearn's raw wording instead.
         print(f"error: {NO_OVERLAP_MESSAGE}", file=sys.stderr)
         return 1
-    except (
-        NoBoldRefsError,
-        FreeSurferNotFoundError,
-        FFmpegNotFoundError,
-        NoMaskOverlapError,
-        ValueError,
-    ) as error:
+    except (RuntimeError, OSError, ValueError, ImageFileError) as error:
+        # Every project-specific exception (NoBoldRefsError,
+        # FreeSurferNotFoundError, FFmpegNotFoundError, NoMaskOverlapError,
+        # ...) already subclasses RuntimeError, so this single clause covers
+        # them along with: a plain RuntimeError such as movie.py's own
+        # ffmpeg-failure message; OSError, for an unwritable -o location;
+        # and nibabel's ImageFileError, for a truncated or corrupt boldref.
         print(f"error: {error}", file=sys.stderr)
         return 1
 
@@ -112,6 +113,7 @@ def _run(args) -> int:
     )
     cuts = _resolve_cuts(args, masks)
     frames = _render_frames(refs, masks, cuts, upsample=not args.no_upsample)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
     write_movie(frames, args.output, fps=args.fps)
     print(f"wrote {args.output}", file=sys.stderr)
     if not args.no_html:
