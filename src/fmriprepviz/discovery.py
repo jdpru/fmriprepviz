@@ -9,7 +9,21 @@ from pathlib import Path
 
 BOLDREF_SUFFIX = "_space-T1w_boldref.nii.gz"
 ANY_BOLDREF_GLOB = "**/func/*_boldref.nii.gz"
-LABEL_ENTITIES = ("ses", "task", "acq", "run")
+
+# BIDS canonical entity order for everything a boldref filename may carry,
+# excluding `sub` (implicit -- every ref is one subject's), `space` (always
+# T1w by construction) and `desc` (not a distinguishing dimension here).
+# Entities outside this list (unknown to BIDS-Derivatives at the time this
+# was written) still appear in the label, appended in sorted order, rather
+# than being silently dropped.
+LABEL_ENTITY_ORDER = ("ses", "task", "acq", "ce", "dir", "rec", "run", "echo", "part")
+LABEL_EXCLUDED_ENTITIES = frozenset({"sub", "space", "desc"})
+
+# Deliberately narrower than LABEL_ENTITY_ORDER: sorting only needs to
+# reflect the dimensions playback should step through in a stable, numeric
+# order. Entities like `dir` or `echo` matter for telling frames apart (so
+# they belong in the label) but not for ordering them, so they are left out
+# here and instead fall through to the final str(path) tie-break below.
 SORT_ENTITIES = ("ses", "task", "acq", "run")
 
 _ENTITY_RE = re.compile(r"(?:^|_)(?P<key>[a-zA-Z0-9]+)-(?P<value>[a-zA-Z0-9]+)")
@@ -28,8 +42,12 @@ class BoldRef:
 
     @property
     def label(self) -> str:
-        present = [k for k in LABEL_ENTITIES if k in self.entities]
-        return " ".join(f"{k}-{self.entities[k]}" for k in present)
+        shown = {
+            k: v for k, v in self.entities.items() if k not in LABEL_EXCLUDED_ENTITIES
+        }
+        known = [k for k in LABEL_ENTITY_ORDER if k in shown]
+        unknown = sorted(k for k in shown if k not in LABEL_ENTITY_ORDER)
+        return " ".join(f"{k}-{shown[k]}" for k in known + unknown)
 
 
 def parse_entities(name: str) -> dict[str, str]:
@@ -65,7 +83,14 @@ def _matches(ref: BoldRef, filters: dict[str, Sequence[str] | None]) -> bool:
 
 
 def _sort_key(ref: BoldRef) -> tuple:
-    return tuple(_natural(ref.entities.get(key, "")) for key in SORT_ENTITIES)
+    # str(ref.path) is a final, total tie-break: without it, refs identical
+    # on every SORT_ENTITIES field (e.g. an AP/PA fieldmap-corrected pair)
+    # would sort however Path.glob happened to yield them, which depends on
+    # filesystem/inode order and is not guaranteed stable across machines
+    # or after the dataset is re-copied.
+    return tuple(
+        _natural(ref.entities.get(key, "")) for key in SORT_ENTITIES
+    ) + (str(ref.path),)
 
 
 def _natural(value: str) -> tuple[int, int, str]:
