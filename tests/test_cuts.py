@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from conftest import PIAL_RADIUS_MM
-from fmriprepviz.cuts import CENTRAL_FRACTION, select_cuts
+from fmriprepviz.cuts import CENTRAL_FRACTION, DEFAULT_N_CUTS, select_cuts
 
 
 def test_returns_one_entry_per_display_mode(surface_masks):
@@ -55,3 +55,23 @@ def test_selection_is_deterministic(surface_masks):
 def test_unknown_display_mode_is_rejected(surface_masks):
     with pytest.raises(ValueError, match="w"):
         select_cuts(surface_masks.pial, display_modes=("w",))
+
+
+def test_single_cut_lands_at_the_centre_not_the_edge(surface_masks):
+    """np.linspace(low, high, 1) returns [low], so asking for one cut used to
+    give the outermost slice of the central band rather than the middle of the
+    brain -- the least informative slice available, and the opposite of what
+    "show me one slice" means. The synthetic pial mask is a sphere centred on
+    the world origin, so every axis's single cut must sit at 0.
+    """
+    cuts = select_cuts(surface_masks.pial, n_cuts=1)
+    for mode, values in cuts.items():
+        assert len(values) == 1
+        assert abs(values[0]) < 2.0, f"{mode} cut at {values[0]}, expected ~0"
+
+
+def test_default_is_a_single_cut(surface_masks):
+    """One large legible slice per orientation is the default view; multi-cut
+    coverage is available by asking for it."""
+    assert DEFAULT_N_CUTS == 1
+    assert all(len(v) == 1 for v in select_cuts(surface_masks.pial).values())

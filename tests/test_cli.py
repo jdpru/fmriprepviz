@@ -15,7 +15,7 @@ def test_parser_defaults():
     assert args.subject == "01"
     assert args.output.name == "qc.gif"
     assert args.fps == 2
-    assert args.n_cuts == 7
+    assert args.n_cuts == 1
     assert args.display_mode == "xyz"
     assert args.no_html is False
     assert args.no_upsample is False

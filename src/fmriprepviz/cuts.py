@@ -12,7 +12,7 @@ from collections.abc import Sequence
 import numpy as np
 
 AXIS_INDEX = {"x": 0, "y": 1, "z": 2}
-DEFAULT_N_CUTS = 7
+DEFAULT_N_CUTS = 1
 CENTRAL_FRACTION = 0.8
 
 
@@ -43,5 +43,10 @@ def _world_coordinates(mask_img) -> np.ndarray:
 
 def _even_cuts(values: np.ndarray, n_cuts: int) -> list[float]:
     low, high = float(values.min()), float(values.max())
+    if n_cuts == 1:
+        # np.linspace(a, b, 1) returns [a], which would put the sole cut at the
+        # edge of the brain -- the least informative slice there is. One cut
+        # means the middle.
+        return [(low + high) / 2.0]
     margin = (1.0 - CENTRAL_FRACTION) / 2.0 * (high - low)
     return [float(v) for v in np.linspace(low + margin, high - margin, n_cuts)]
