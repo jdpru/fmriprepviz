@@ -133,3 +133,36 @@ def test_label_text_is_drawn_in_the_frame(surface_masks, cuts, boldrefs):
     assert not np.array_equal(first_strip, second_strip)
     assert first_strip.std() > 0
     assert second_strip.std() > 0
+
+
+def test_no_colorbar_is_drawn(surface_masks, cuts, boldrefs):
+    """nilearn's plot_anat defaults to colorbar=True, adding a per-row
+    colorbar whose labelled range is recomputed from each frame's own
+    masked intensity window. That per-frame windowing is correct and
+    deliberate, but this tool's premise is a display that never changes on
+    its own: a number that ticks between frames for reasons unrelated to
+    registration trains the eye on a meaningless signal, so no colorbar may
+    be drawn at all.
+
+    A right-edge strip is the natural place to look, but the true right
+    edge of the frame is not where nilearn puts things: inspecting an
+    actual rendered frame shows the colorbar's tick text and gradient bar
+    sit around columns 997-1077 of 1200, with a ~120px fully-black margin
+    beyond that to the frame's true edge -- so the rightmost 2% (or even
+    10%) of columns is black whether or not the bug is present, and would
+    not detect it. It is also necessary to clear the coronal/axial "R"
+    orientation annotation, which sits just to the left of the colorbar
+    today and shifts right (to end around column 1040) once the colorbar
+    is removed, as the freed width is given back to the anatomical slices.
+    The rightmost 12.5% of columns (the last 150 of 1200) was chosen by
+    rendering both the current and fixed output and checking column
+    contents directly: it reliably contains the colorbar in the current,
+    buggy output, and reliably stays outside both the colorbar and the
+    (shifted) "R" annotation once the colorbar is gone.
+    """
+    pixels = _as_array(
+        render_frame(nib.load(boldrefs[0].path), surface_masks, cuts, boldrefs[0].label)
+    )
+    strip_width = int(round(FRAME_SIZE[0] * 0.125))
+    right_strip = pixels[:, -strip_width:]
+    assert np.array_equal(right_strip, np.zeros_like(right_strip))
