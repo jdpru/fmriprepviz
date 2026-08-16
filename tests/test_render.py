@@ -6,7 +6,7 @@ import pytest
 from nilearn.image.resampling import BoundingBoxError
 from PIL import Image
 
-from conftest import PIAL_RADIUS_MM
+from conftest import BOLDREF_VOXEL_SIZE, PIAL_RADIUS_MM
 from fmriprepviz.cuts import select_cuts
 from fmriprepviz.discovery import find_boldrefs
 from fmriprepviz.render import FRAME_SIZE, NoMaskOverlapError, render_frame
@@ -121,6 +121,61 @@ def test_frame_contains_red_contour_pixels(surface_masks, cuts, boldrefs):
     red, green, blue = pixels[..., 0], pixels[..., 1], pixels[..., 2]
     reddish = (red > 120) & (red - green > 60) & (red - blue > 60)
     assert reddish.sum() > 200
+
+
+def _bright_disc_mask(png_bytes):
+    """Boolean pixel mask of the bright (grayscale, non-contour) disc."""
+    pixels = _as_array(png_bytes).astype(int)
+    red, green, blue = pixels[..., 0], pixels[..., 1], pixels[..., 2]
+    grayscale = (np.abs(red - green) < 10) & (np.abs(green - blue) < 10)
+    return grayscale & (red > 100)
+
+
+def test_contours_land_on_the_anatomy_not_merely_somewhere(surface_masks, boldrefs):
+    """Guards the join between mask geometry (verified in test_ribbon.py)
+    and red-pixel presence (verified by test_frame_contains_red_contour_pixels
+    above): neither of those checks would catch contours drawn at the wrong
+    scale, offset, orientation, or on the wrong row, since both pass as long
+    as red pixels exist *somewhere* with the right mask *shape*. A left-right
+    flip or a half-voxel offset in the join between mask and boldref would
+    ship looking correct to both and only be visible here.
+
+    The synthetic fixture makes this tractable: the boldref's bright disc
+    and the pial mask share a 40 mm radius (PIAL_RADIUS_MM), so on a single
+    axial cut through the sphere's centre (z=0, its widest cross-section),
+    the outer red ring must sit right on the bright disc's edge. This
+    compares their positions along the frame's central row.
+
+    Tolerance: one BOLD voxel's width, converted to pixels using the
+    disc's own measured width (rather than a hard-coded pixel count) --
+    the coarsest unit at which the underlying BOLD data can resolve the
+    sphere's true edge in the first place, so agreement any tighter than
+    that would be over-claiming precision the input data does not have.
+    """
+    single_axial_cut = {"z": [0.0]}
+    png = render_frame(
+        nib.load(boldrefs[0].path), surface_masks, single_axial_cut, "label"
+    )
+    pixels = _as_array(png)
+    central_row = pixels.shape[0] // 2
+
+    red_xs = np.where(_reddish_mask(png)[central_row])[0]
+    bright_xs = np.where(_bright_disc_mask(png)[central_row])[0]
+    assert red_xs.size > 0, "no red contour pixels on the central row"
+    assert bright_xs.size > 0, "no bright disc pixels on the central row"
+
+    disc_width_px = bright_xs.max() - bright_xs.min()
+    px_per_mm = disc_width_px / (2.0 * PIAL_RADIUS_MM)
+    tolerance_px = BOLDREF_VOXEL_SIZE * px_per_mm
+
+    assert abs(red_xs.min() - bright_xs.min()) <= tolerance_px, (
+        f"left contour edge {red_xs.min()} vs disc edge {bright_xs.min()}, "
+        f"tolerance {tolerance_px:.1f}px"
+    )
+    assert abs(red_xs.max() - bright_xs.max()) <= tolerance_px, (
+        f"right contour edge {red_xs.max()} vs disc edge {bright_xs.max()}, "
+        f"tolerance {tolerance_px:.1f}px"
+    )
 
 
 def test_upsampling_disabled_still_renders(surface_masks, cuts, boldrefs):
