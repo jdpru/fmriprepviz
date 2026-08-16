@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import html
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -107,10 +108,16 @@ def write_html(
         raise ValueError(
             f"Got {len(frames)} frames but {len(labels)} labels; they must match."
         )
+    # HTML-escape title to prevent markup injection
+    escaped_title = html.escape(title)
+    # Escape </ in JSON strings to prevent script injection
+    frames_json = json.dumps([_data_uri(frame) for frame in frames]).replace("</", "<\\/")
+    labels_json = json.dumps(list(labels)).replace("</", "<\\/")
+
     document = _TEMPLATE.substitute(
-        title=title,
-        frames_json=json.dumps([_data_uri(frame) for frame in frames]),
-        labels_json=json.dumps(list(labels)),
+        title=escaped_title,
+        frames_json=frames_json,
+        labels_json=labels_json,
         interval_ms=int(round(1000 / fps)),
     )
     path = Path(path)
