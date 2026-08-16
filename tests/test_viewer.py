@@ -90,7 +90,12 @@ def test_hostile_inputs_are_escaped(frames, tmp_path):
     # appear as a bare </script> before the real closing tag
     assert text.rfind("</script>", script_idx, end_script_idx) == -1
 
-    # Verify frames and labels still round-trip correctly
+    # Verify frames still round-trip: each base64 payload present in output
     assert all(base64.b64encode(frame).decode("ascii") in text for frame in frames)
-    assert hostile_label in text  # Should appear escaped in JSON string
-    assert hostile_title in text  # Should appear escaped in title
+
+    # Escaped title must be present in the <title> element
+    assert "&lt;/title&gt;&lt;script&gt;" in text
+
+    # Escaped label must be present in the JSON LABELS array with </> escaped as <\/
+    # The JSON array should contain the escaped form: ["<\/script>", "normal", "frame"]
+    assert '"<\\/script>"' in text
