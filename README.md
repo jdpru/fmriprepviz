@@ -15,8 +15,16 @@ anything that appears to move as the movie plays is misregistration.
 
 ## Install
 
+For development (clones the repo and runs commands with `uv run`):
+
 ```bash
 uv sync
+```
+
+To just get the `fmriprepviz` command on your PATH:
+
+```bash
+uv tool install .
 ```
 
 ## Which directory do I point it at?

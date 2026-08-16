@@ -118,7 +118,13 @@ def _run(args) -> int:
     print(f"wrote {args.output}", file=sys.stderr)
     if not args.no_html:
         html_path = args.output.with_suffix(".html")
-        write_html(frames, [ref.label for ref in refs], html_path, fps=args.fps)
+        write_html(
+            frames,
+            [ref.label for ref in refs],
+            html_path,
+            fps=args.fps,
+            title=f"fmriprepviz sub-{args.subject}",
+        )
         print(f"wrote {html_path}", file=sys.stderr)
     return 0
 
