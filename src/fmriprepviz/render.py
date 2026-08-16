@@ -37,17 +37,34 @@ def render_frame(boldref_img, masks, cuts, label: str, upsample: bool = True) ->
     """Draw one frame and return it as PNG bytes."""
     display_img = _prepare(boldref_img, masks.pial, upsample)
     vmin, vmax = _window(display_img, masks.pial)
+    nrows, ncols = _grid_shape(cuts)
     figure, axes = plt.subplots(
-        len(cuts), 1, figsize=FIGSIZE, dpi=DPI, facecolor="black"
+        nrows, ncols, figsize=FIGSIZE, dpi=DPI, facecolor="black"
     )
     try:
         for axis, (mode, coordinates) in zip(np.atleast_1d(axes), cuts.items()):
             _draw_row(figure, axis, display_img, masks, mode, coordinates, vmin, vmax)
-        figure.subplots_adjust(left=0, right=1, top=0.94, bottom=0.0, hspace=0.05)
+        figure.subplots_adjust(
+            left=0, right=1, top=0.94, bottom=0.0, hspace=0.05, wspace=0.02
+        )
         figure.text(0.01, 0.985, label, color="white", va="top", fontsize=11)
         return _to_png(figure)
     finally:
         plt.close(figure)
+
+
+def _grid_shape(cuts) -> tuple[int, int]:
+    """Lay the orientations out in a row when each shows a single slice.
+
+    A row of cuts is wide and short, so stacking several of them fills a
+    landscape frame well. A single slice is not: stacked, each panel is
+    limited by its row's height and comes out barely larger than one cut of
+    the multi-cut view. Side by side, each panel gets a full share of the
+    width instead.
+    """
+    if all(len(coordinates) == 1 for coordinates in cuts.values()):
+        return 1, len(cuts)
+    return len(cuts), 1
 
 
 def _prepare(boldref_img, reference_img, upsample: bool):

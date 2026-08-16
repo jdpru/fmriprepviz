@@ -95,7 +95,7 @@ Useful options:
 | `--task rest` | restrict to this task |
 | `--run 1` | restrict to this run |
 | `--fs-dir PATH` | FreeSurfer **subject** directory (the one containing `mri/ribbon.mgz`), when it is not at `<fmriprep>/sourcedata/freesurfer/sub-<label>` |
-| `--n-cuts 7` | cuts per orientation |
+| `--n-cuts 7` | cuts per orientation (default 1). One cut per orientation gives three large slices through the centre of the brain, side by side. Higher values give more coverage in smaller panels, stacked one row per orientation. |
 | `--display-mode z` | orientations to show, letters from `x`, `y`, `z` |
 | `--cut-coords -20 0 20` | explicit cuts in mm; needs a single `--display-mode` |
 | `--fps 2` | playback speed |
