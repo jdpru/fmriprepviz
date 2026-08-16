@@ -1,3 +1,4 @@
+import os
 import shutil
 
 import nibabel as nib
@@ -244,3 +245,97 @@ def test_mp4_output(derivatives, tmp_path):
     output = tmp_path / "qc.mp4"
     main([str(derivatives), "--subject", "01", "-o", str(output), "--n-cuts", "3"])
     assert output.is_file()
+
+
+def test_missing_output_directory_is_created(derivatives, tmp_path):
+    """-o subdir/qc.gif is an ordinary thing to type; the parent directory
+    not existing yet should not be treated as an error.
+    """
+    output = tmp_path / "does" / "not" / "exist" / "qc.gif"
+    exit_code = main(
+        [str(derivatives), "--subject", "01", "-o", str(output), "--n-cuts", "3"]
+    )
+    assert exit_code == 0
+    assert output.is_file()
+
+
+def test_unwritable_output_location_exits_non_zero_with_a_message(
+    derivatives, tmp_path, capsys
+):
+    """An -o path under a read-only directory must be reported cleanly
+    (exit 1, message on stderr), not as an uncaught OSError traceback.
+    """
+    readonly_dir = tmp_path / "readonly"
+    readonly_dir.mkdir()
+    readonly_dir.chmod(0o555)
+    output = readonly_dir / "qc.gif"
+    try:
+        exit_code = main(
+            [str(derivatives), "--subject", "01", "-o", str(output), "--n-cuts", "3"]
+        )
+        assert exit_code == 1
+        assert capsys.readouterr().err.strip() != ""
+    finally:
+        readonly_dir.chmod(0o755)
+
+
+def _write_corrupt_boldref_tree(tmp_path):
+    """A minimal derivatives tree whose single space-T1w boldref is garbage
+    bytes with a valid-looking name, simulating a truncated/corrupt file.
+    """
+    root = tmp_path / "corrupt_deriv"
+    func = root / "sub-01" / "ses-01" / "func"
+    func.mkdir(parents=True)
+    name = "sub-01_ses-01_task-rest_run-1_space-T1w_boldref.nii.gz"
+    (func / name).write_bytes(b"not a real nifti file, just garbage bytes")
+    return root
+
+
+def test_corrupt_boldref_exits_non_zero_with_a_message(derivatives, tmp_path, capsys):
+    """A truncated or corrupt boldref .nii.gz must be reported cleanly, not
+    as an uncaught nibabel ImageFileError traceback. Reuses the shared
+    `derivatives` fixture's FreeSurfer directory via --fs-dir, since cuts
+    and masks are derived from the ribbon alone and never touch the
+    (corrupt) boldref before nib.load(ref.path) is reached.
+    """
+    corrupt_root = _write_corrupt_boldref_tree(tmp_path)
+    fs_dir = derivatives / "sourcedata" / "freesurfer" / "sub-01"
+    exit_code = main(
+        [
+            str(corrupt_root), "--subject", "01", "-o", str(tmp_path / "qc.gif"),
+            "--fs-dir", str(fs_dir), "--n-cuts", "3",
+        ]
+    )
+    assert exit_code == 1
+    assert capsys.readouterr().err.strip() != ""
+
+
+def _write_stub_ffmpeg(bin_dir):
+    """A stub `ffmpeg` that is found on PATH but always fails, simulating a
+    minimal ffmpeg build without libx264 -- a common homebrew/conda case.
+    """
+    stub = bin_dir / "ffmpeg"
+    stub.write_text("#!/bin/sh\necho 'stub ffmpeg: no encoder available' >&2\nexit 1\n")
+    stub.chmod(0o755)
+    return stub
+
+
+def test_ffmpeg_encode_failure_exits_non_zero_with_a_message(
+    derivatives, tmp_path, monkeypatch, capsys
+):
+    """movie.write_mp4 raises a plain RuntimeError with a helpful message
+    when ffmpeg itself fails, but the CLI's catch tuple used to list only
+    RuntimeError *subclasses* -- so this specific, deliberately-constructed
+    helpful error was exactly the one that escaped as a traceback.
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    _write_stub_ffmpeg(bin_dir)
+    monkeypatch.setenv("PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", ""))
+
+    output = tmp_path / "qc.mp4"
+    exit_code = main(
+        [str(derivatives), "--subject", "01", "-o", str(output), "--n-cuts", "3"]
+    )
+    assert exit_code == 1
+    assert "ffmpeg" in capsys.readouterr().err.lower()
