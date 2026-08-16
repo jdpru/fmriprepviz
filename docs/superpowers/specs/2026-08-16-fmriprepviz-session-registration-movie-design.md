@@ -47,7 +47,7 @@ locked to the same tissue boundaries throughout.
 | Contour source | `ribbon.mgz` | Matches what fMRIPrep's own reports show, needs only nibabel/nilearn, and avoids mesh-plane intersection geometry. |
 | Frame granularity | One frame per boldref | Averaging runs within a session would hide real within-session misregistration. Filters narrow the set when the movie is too long. |
 | Rendering | nilearn `plot_anat` + `add_contours` | nilearn handles cut placement, orientation, and aspect ratio correctly. Hand-rolled slice display is the usual source of silently left-right-flipped QC figures. |
-| Resampling | BOLD upsampled to the 1 mm ribbon grid | Contours are computed at 1 mm and stay crisp; the BOLD background is smooth. `--no-upsample` disables it. |
+| Resampling | BOLD always resampled onto the 1 mm ribbon grid | Contours stay crisp, the background is smooth, and — the load-bearing reason — the display bounds stay pinned across frames. `--no-upsample` switches the interpolation to nearest-neighbour; it does not skip the resample. |
 | File discovery | glob + regex, not pybids | One filename pattern; pybids indexing of a derivatives tree is slow and buys nothing here. |
 
 ## Preconditions
@@ -84,6 +84,25 @@ freesurfer/mri/ribbon.mgz ──> ribbon ──> white_mask, pial_mask (1 mm, sc
 The masks and cut coordinates are computed once, before the frame loop, and
 reused unchanged for every frame. This is the invariant that makes the movie a
 valid registration test.
+
+**Three things must be held fixed, not two.** The masks and the cut coordinates
+are the obvious pair, but the *display bounds* are a third, and they are easy to
+overlook because nothing in the code names them. nilearn derives each axis's
+limits from the bounds of the image drawn on it, so two BOLD references with
+different fields of view render at different zoom — and since the contours are
+drawn in world coordinates onto those axes, the contours themselves move on
+screen. A viewer reads that as misregistration, or real misregistration is
+masked by the rescaling.
+
+Resampling every BOLD reference onto the ribbon's grid is what pins the display
+bounds. That step therefore serves two purposes, and only one of them is
+cosmetic: it smooths the background, and it holds the axes fixed. It must
+happen on every path, including when interpolation is not wanted — which is why
+`--no-upsample` selects nearest-neighbour interpolation rather than skipping the
+resample.
+
+This was found by the final whole-branch review rather than during design, and
+the omission was in this document as much as in the code.
 
 ## Modules
 
