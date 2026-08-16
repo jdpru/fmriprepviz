@@ -341,3 +341,48 @@ def test_no_colorbar_is_drawn(surface_masks, cuts, boldrefs):
     strip_width = int(round(FRAME_SIZE[0] * 0.125))
     right_strip = pixels[:, -strip_width:]
     assert np.array_equal(right_strip, np.zeros_like(right_strip))
+
+
+def _content_by_horizontal_third(png_bytes):
+    """Non-background pixel counts in the left, middle and right thirds,
+    ignoring the top strip where the frame label is drawn."""
+    pixels = _as_array(png_bytes)
+    body = pixels[int(pixels.shape[0] * 0.08):]
+    lit = body.max(axis=2) > 20
+    third = lit.shape[1] // 3
+    return [
+        int(lit[:, :third].sum()),
+        int(lit[:, third : 2 * third].sum()),
+        int(lit[:, 2 * third :].sum()),
+    ]
+
+
+def test_single_cut_per_orientation_lays_the_panels_side_by_side(
+    surface_masks, boldrefs
+):
+    """With one cut each, stacking the orientations as rows leaves every panel
+    height-limited in a 1200x600 frame -- the slices come out barely larger
+    than the seven-cut view they were meant to replace. Laying them out in a
+    single row instead gives each panel a full third of the width.
+
+    Stacked rows put all the anatomy in the horizontal middle, so requiring
+    substantial content in the left and right thirds too is what actually
+    distinguishes the two layouts.
+    """
+    single = select_cuts(surface_masks.pial, n_cuts=1)
+    png = render_frame(
+        nib.load(boldrefs[0].path), surface_masks, single, boldrefs[0].label
+    )
+    left, middle, right = _content_by_horizontal_third(png)
+    assert Image.open(io.BytesIO(png)).size == FRAME_SIZE
+    assert left > 0.25 * middle, f"left third nearly empty: {left} vs {middle}"
+    assert right > 0.25 * middle, f"right third nearly empty: {right} vs {middle}"
+
+
+def test_multi_cut_layout_is_unchanged(surface_masks, cuts, boldrefs):
+    """The seven-cut view keeps its row-per-orientation layout; only the
+    single-cut case is rearranged."""
+    png = render_frame(
+        nib.load(boldrefs[0].path), surface_masks, cuts, boldrefs[0].label
+    )
+    assert Image.open(io.BytesIO(png)).size == FRAME_SIZE
