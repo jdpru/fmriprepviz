@@ -17,6 +17,7 @@ import numpy as np
 RIBBON_RELATIVE_PATH = Path("mri") / "ribbon.mgz"
 WHITE_LABELS = (2, 41)
 GRAY_LABELS = (3, 42)
+CORTICAL_LABELS = WHITE_LABELS + GRAY_LABELS
 
 
 class FreeSurferNotFoundError(RuntimeError):
@@ -64,6 +65,7 @@ def load_surface_masks(fs_dir) -> SurfaceMasks:
         raise FreeSurferNotFoundError(f"Expected a ribbon at {ribbon_path}")
     ribbon = nib.load(ribbon_path)
     data = np.asarray(ribbon.dataobj)
+    _require_cortical_labels(data, ribbon_path)
     return SurfaceMasks(
         white=_mask_image(np.isin(data, WHITE_LABELS), ribbon.affine),
         pial=_mask_image(np.isin(data, WHITE_LABELS + GRAY_LABELS), ribbon.affine),
@@ -72,3 +74,21 @@ def load_surface_masks(fs_dir) -> SurfaceMasks:
 
 def _mask_image(mask: np.ndarray, affine: np.ndarray) -> nib.Nifti1Image:
     return nib.Nifti1Image(mask.astype(np.uint8), affine)
+
+
+def _require_cortical_labels(data: np.ndarray, ribbon_path: Path) -> None:
+    """Fail clearly if none of the expected cortical labels are present.
+
+    Without this check, a ribbon with no matching voxels (a failed
+    recon-all, or an aseg.mgz mistaken for the ribbon) silently produces
+    all-zero masks, and the eventual failure is numpy's opaque "zero-size
+    array to reduction operation minimum which has no identity" once cuts
+    are derived from the empty pial mask.
+    """
+    if not np.isin(data, CORTICAL_LABELS).any():
+        raise FreeSurferNotFoundError(
+            f"{ribbon_path} contains none of the expected cortical labels "
+            f"{CORTICAL_LABELS}. This usually means recon-all failed, or "
+            "--fs-dir points at a whole-brain segmentation (aseg.mgz) "
+            "rather than the cortical ribbon (ribbon.mgz)."
+        )
