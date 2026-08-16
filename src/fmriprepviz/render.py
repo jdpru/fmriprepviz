@@ -51,13 +51,23 @@ def render_frame(boldref_img, masks, cuts, label: str, upsample: bool = True) ->
 
 
 def _prepare(boldref_img, reference_img, upsample: bool):
-    """Optionally resample the BOLD onto the 1 mm anatomical grid."""
-    if not upsample:
-        return boldref_img
+    """Resample the BOLD onto the anatomical (mask) grid.
+
+    The display grid must be pinned to the same grid for every frame: with
+    interpolation switched off, nilearn instead sets each axis's limits from
+    the bounds of what is actually drawn on it, so two boldrefs that differ
+    only in field of view would render the same anatomy at different zoom
+    levels -- moving the red contours on screen, the exact artefact this
+    tool exists to rule out as misregistration. So `upsample` no longer
+    decides *whether* to resample, only *how*: `linear` gives a smoothly
+    upsampled image, `nearest` keeps voxels visibly blocky (no
+    interpolation) while still pinning the display grid.
+    """
+    interpolation = "linear" if upsample else "nearest"
     return image.resample_to_img(
         boldref_img,
         reference_img,
-        interpolation="linear",
+        interpolation=interpolation,
         force_resample=True,
         copy_header=True,
     )

@@ -92,7 +92,7 @@ Useful options:
 | `--cut-coords -20 0 20` | explicit cuts in mm; needs a single `--display-mode` |
 | `--fps 2` | playback speed |
 | `--no-html` | skip the viewer |
-| `--no-upsample` | show BOLD at native resolution |
+| `--no-upsample` | nearest-neighbour (blocky) resampling instead of linear; the display grid stays pinned either way |
 
 `-o qc.mp4` produces MP4 instead of GIF.
 

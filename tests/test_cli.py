@@ -178,10 +178,13 @@ def test_default_upsample_reports_a_mismatched_fs_dir_as_no_overlap(
 def test_no_upsample_reports_a_mismatched_fs_dir_as_no_overlap(
     derivatives, tmp_path, capsys
 ):
-    """With --no-upsample, the same mismatched --fs-dir instead reaches
-    render.render_frame's own NoMaskOverlapError guard directly. The CLI
-    must report the identical wording as the upsampled path above, since
-    from the user's point of view it is the same mistake.
+    """With --no-upsample, the mismatched --fs-dir trips the identical
+    nilearn BoundingBoxError as the upsampled path above: since Fix 1,
+    --no-upsample also resamples the BOLD reference onto the mask's grid
+    (with nearest-neighbour interpolation, to keep the display pinned
+    across frames), rather than leaving it on its own native grid. The CLI
+    must report the identical wording either way, since from the user's
+    point of view it is the same mistake.
     """
     fs_dir = _write_mismatched_fs_dir(tmp_path)
     exit_code = main(

@@ -66,7 +66,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--no-upsample", action="store_true",
-        help="show BOLD at its native resolution instead of the 1 mm grid",
+        help=(
+            "show BOLD with nearest-neighbour (blocky, no interpolation) "
+            "resampling instead of smooth linear resampling; the display "
+            "grid is still pinned to the anatomy either way"
+        ),
     )
     return parser
 
