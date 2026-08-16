@@ -3,8 +3,10 @@ import io
 import nibabel as nib
 import numpy as np
 import pytest
+from nilearn.image.resampling import BoundingBoxError
 from PIL import Image
 
+from conftest import PIAL_RADIUS_MM
 from fmriprepviz.cuts import select_cuts
 from fmriprepviz.discovery import find_boldrefs
 from fmriprepviz.render import FRAME_SIZE, NoMaskOverlapError, render_frame
@@ -25,6 +27,55 @@ def boldrefs(derivatives):
 
 def _as_array(png_bytes):
     return np.asarray(Image.open(io.BytesIO(png_bytes)).convert("RGB"))
+
+
+def _reddish_mask(png_bytes):
+    """Boolean pixel mask of the drawn red contours.
+
+    Same criterion as test_frame_contains_red_contour_pixels: the
+    background is grayscale, so any strongly red pixel is a contour.
+    """
+    pixels = _as_array(png_bytes).astype(int)
+    red, green, blue = pixels[..., 0], pixels[..., 1], pixels[..., 2]
+    return (red > 120) & (red - green > 60) & (red - blue > 60)
+
+
+def _reddish_bbox(png_bytes):
+    """(x_min, x_max, y_min, y_max) of the drawn red contours.
+
+    A handful of anti-aliased border pixels legitimately flicker in or out
+    of the `_reddish_mask` threshold between two otherwise-identical renders
+    whenever the underlying grayscale windowing differs even slightly (here,
+    because the two boldrefs' independent noise draws give the masked
+    intensity percentiles slightly different values) -- this is unrelated to
+    contour placement, so a full pixel-mask equality check would be too
+    strict. The bounding box is robust to that noise while still catching
+    the actual defect: a display grid that is not pinned across frames
+    shifts and rescales the whole contour, moving this box by many pixels,
+    not flickering a handful of edge pixels.
+    """
+    ys, xs = np.where(_reddish_mask(png_bytes))
+    return (int(xs.min()), int(xs.max()), int(ys.min()), int(ys.max()))
+
+
+def _sphere_boldref(shape, voxel_size=3.0, radius_mm=PIAL_RADIUS_MM, seed=0):
+    """A synthetic boldref: a bright sphere of `radius_mm` centred at the
+    world origin, on a grid of the given shape/voxel size. Two boldrefs
+    built with the same radius_mm but different shape/voxel_size share the
+    same anatomy but differ in field of view -- exactly the case that
+    exposed the --no-upsample bug.
+    """
+    origin = -(shape[0] * voxel_size) / 2.0
+    axes = [np.arange(n) * voxel_size + origin for n in shape]
+    grids = np.meshgrid(*axes, indexing="ij")
+    radius = np.sqrt(sum(g**2 for g in grids))
+    signal = np.where(radius < radius_mm, 1000.0, 0.0)
+    rng = np.random.default_rng(seed)
+    data = (signal + rng.normal(0.0, 20.0, shape)).astype(np.float32)
+    affine = np.eye(4)
+    affine[:3, :3] = np.diag([voxel_size] * 3)
+    affine[:3, 3] = origin
+    return nib.Nifti1Image(data, affine)
 
 
 def test_returns_png_bytes(derivatives, surface_masks, cuts, boldrefs):
@@ -93,15 +144,50 @@ def test_one_row_per_display_mode(surface_masks, boldrefs):
 
 
 def test_non_overlapping_mask_is_reported(surface_masks, cuts, boldrefs):
-    """A pial mask that shares no world-space voxels with the display grid
-    must raise a clear error rather than silently falling back to
-    whole-volume intensity percentiles (which reintroduces the exact
-    cross-session flicker the windowing is meant to prevent).
+    """A pial mask that shares no voxels with the display grid must raise a
+    clear error rather than silently falling back to whole-volume intensity
+    percentiles (which reintroduces the exact cross-session flicker the
+    windowing is meant to prevent).
 
-    upsample=False is required to reach this specific check: with the
-    default upsample=True, nilearn's own resample_to_img already raises
-    its own BoundingBoxError while placing the BOLD reference onto the
-    (badly shifted) mask grid, before this code path is ever reached.
+    Since Fix 1 (--no-upsample now resamples onto the mask grid too, with
+    nearest-neighbour interpolation, to keep the display pinned across
+    frames -- see test_display_pinned_across_differing_boldref_fov below),
+    a *mismatched-affine* mask no longer reaches this guard at all: nilearn's
+    own resample_to_img raises its own BoundingBoxError while placing the
+    BOLD reference onto the (badly shifted) mask grid, under both upsample
+    values (see test_shifted_mask_now_raises_bounding_box_error_either_way
+    below). What this guard still protects against is a mask that shares the
+    display grid exactly but happens to contain zero foreground voxels
+    (e.g. if SurfaceMasks were ever constructed directly with an empty
+    mask, bypassing ribbon.load_surface_masks's own guard against that).
+    """
+    empty_pial = nib.Nifti1Image(
+        np.zeros_like(np.asarray(surface_masks.pial.dataobj)),
+        surface_masks.pial.affine,
+    )
+    empty_masks = SurfaceMasks(white=surface_masks.white, pial=empty_pial)
+    with pytest.raises(NoMaskOverlapError):
+        render_frame(
+            nib.load(boldrefs[0].path),
+            empty_masks,
+            cuts,
+            boldrefs[0].label,
+            upsample=False,
+        )
+
+
+def test_shifted_mask_now_raises_bounding_box_error_either_way(
+    surface_masks, cuts, boldrefs
+):
+    """Documents a direct consequence of Fix 1: because --no-upsample now
+    always resamples the BOLD reference onto the mask's own grid (only the
+    interpolation mode changes), a totally mismatched mask affine trips
+    nilearn's BoundingBoxError under upsample=False exactly as it already
+    did under upsample=True, rather than reaching this module's own
+    NoMaskOverlapError guard (see test_non_overlapping_mask_is_reported
+    above for what still reaches that guard). test_cli.py's
+    test_no_upsample_reports_a_mismatched_fs_dir_as_no_overlap confirms the
+    CLI still reports the identical wording either way.
     """
     shifted_affine = surface_masks.pial.affine.copy()
     shifted_affine[:3, 3] += 1000.0
@@ -109,13 +195,47 @@ def test_non_overlapping_mask_is_reported(surface_masks, cuts, boldrefs):
         np.asarray(surface_masks.pial.dataobj), shifted_affine
     )
     shifted_masks = SurfaceMasks(white=surface_masks.white, pial=shifted_pial)
-    with pytest.raises(NoMaskOverlapError):
+    with pytest.raises(BoundingBoxError):
         render_frame(
             nib.load(boldrefs[0].path),
             shifted_masks,
             cuts,
             boldrefs[0].label,
             upsample=False,
+        )
+
+
+def test_display_pinned_across_differing_boldref_fov(surface_masks, cuts):
+    """This is the direct expression of the tool's central invariant: masks
+    and cuts are computed once and reused for every frame, so anything that
+    appears to move between frames must be misregistration, never a display
+    artefact. Two boldrefs here are identical except for field of view (a
+    48^3 grid at 3 mm vs. a 100^3 grid at 3 mm), both containing a bright
+    sphere of the same radius as the pial mask. If the display grid were not
+    pinned, nilearn would set each axis's limits from the bounds of what is
+    actually drawn on it, so the same anatomy would appear at a different
+    zoom level -- moving the red contours on screen -- purely because of a
+    FOV difference between sessions that has nothing to do with
+    registration. This must hold under both upsample=True (already correct
+    before this fix) and upsample=False (the bug Fix 1 corrects: previously
+    it left the BOLD on its own native grid, letting the display zoom to
+    that grid's own bounds).
+    """
+    small_fov = _sphere_boldref((48, 48, 48), voxel_size=3.0)
+    large_fov = _sphere_boldref((100, 100, 100), voxel_size=3.0)
+
+    for upsample in (True, False):
+        small_png = render_frame(
+            small_fov, surface_masks, cuts, "small-fov", upsample=upsample
+        )
+        large_png = render_frame(
+            large_fov, surface_masks, cuts, "large-fov", upsample=upsample
+        )
+        small_bbox = _reddish_bbox(small_png)
+        large_bbox = _reddish_bbox(large_png)
+        assert small_bbox == large_bbox, (
+            f"contour bounding box moved between differing FOVs with "
+            f"upsample={upsample}: {small_bbox} vs {large_bbox}"
         )
 
 
