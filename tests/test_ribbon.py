@@ -84,3 +84,30 @@ def test_missing_ribbon_is_reported(tmp_path):
     with pytest.raises(FreeSurferNotFoundError) as excinfo:
         load_surface_masks(fs_dir)
     assert "ribbon.mgz" in str(excinfo.value)
+
+
+def test_ribbon_without_cortical_labels_is_reported(tmp_path):
+    """A ribbon.mgz with none of labels 2/3/41/42 -- a failed recon-all, or
+    an aseg.mgz renamed to look like a ribbon -- must be reported clearly.
+    Without this check, load_surface_masks silently builds all-zero masks,
+    and the failure only surfaces much later as numpy's opaque "zero-size
+    array to reduction operation minimum which has no identity" when cuts
+    are derived from the (empty) pial mask.
+    """
+    import nibabel as nib
+    import numpy as np
+
+    fs_dir = tmp_path / "sub-01"
+    mri = fs_dir / "mri"
+    mri.mkdir(parents=True)
+    ribbon_path = mri / "ribbon.mgz"
+    # Label 4 (left lateral ventricle) is a real FreeSurfer aseg label but
+    # none of the cortical ribbon labels this tool looks for.
+    data = np.full((10, 10, 10), 4, dtype=np.uint8)
+    nib.MGHImage(data, np.eye(4)).to_filename(ribbon_path)
+
+    with pytest.raises(FreeSurferNotFoundError) as excinfo:
+        load_surface_masks(fs_dir)
+    message = str(excinfo.value)
+    assert str(ribbon_path) in message
+    assert "2" in message and "3" in message and "41" in message and "42" in message
