@@ -129,3 +129,11 @@ def derivatives_without_t1w(tmp_path_factory) -> Path:
     _write_mni_boldref(root)
     _write_ribbon(root)
     return root
+
+
+@pytest.fixture(scope="session")
+def surface_masks(derivatives):
+    """White and pial masks derived from the synthetic ribbon."""
+    from fmriprepviz.ribbon import load_surface_masks, resolve_fs_dir
+
+    return load_surface_masks(resolve_fs_dir(derivatives, "01"))
