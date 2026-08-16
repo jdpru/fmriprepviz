@@ -9,7 +9,12 @@ from PIL import Image
 from conftest import BOLDREF_VOXEL_SIZE, PIAL_RADIUS_MM
 from fmriprepviz.cuts import select_cuts
 from fmriprepviz.discovery import find_boldrefs
-from fmriprepviz.render import FRAME_SIZE, NoMaskOverlapError, render_frame
+from fmriprepviz.render import (
+    FRAME_SIZE,
+    NoMaskOverlapError,
+    frame_size,
+    render_frame,
+)
 from fmriprepviz.ribbon import SurfaceMasks
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -374,7 +379,7 @@ def test_single_cut_per_orientation_lays_the_panels_side_by_side(
         nib.load(boldrefs[0].path), surface_masks, single, boldrefs[0].label
     )
     left, middle, right = _content_by_horizontal_third(png)
-    assert Image.open(io.BytesIO(png)).size == FRAME_SIZE
+    assert Image.open(io.BytesIO(png)).size == frame_size(single)
     assert left > 0.25 * middle, f"left third nearly empty: {left} vs {middle}"
     assert right > 0.25 * middle, f"right third nearly empty: {right} vs {middle}"
 
