@@ -97,6 +97,7 @@ def _draw_row(figure, axis, display_img, masks, mode, coordinates, vmin, vmax):
         black_bg=True,
         annotate=True,
         draw_cross=False,
+        colorbar=False,
     )
     for mask in (masks.white, masks.pial):
         display.add_contours(
