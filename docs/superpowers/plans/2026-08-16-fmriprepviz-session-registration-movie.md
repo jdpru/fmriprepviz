@@ -2053,38 +2053,47 @@ data confirms the tool copes with a genuine fMRIPrep tree.
 - Consumes: the finished CLI.
 - Produces: a report to the user.
 
-- [ ] **Step 1: Run against the real boldrefs**
+- [ ] **Step 1: Check discovery against the real tree**
 
-The dataset at `/Users/poldrack/data_unsynced/network/bids/derivatives/fmriprep_25.2.4`
-has five `space-T1w` boldrefs for `sub-s336` (ses-02, 04, 06, 08, 10, one
-`task-stopSignal_run-1` each) but **no FreeSurfer output** anywhere on this
-machine. Ask the user for the FreeSurfer subject directory before this step. If
-it is still unavailable, run the discovery half only and record that the visual
-check is outstanding:
+The NSD dataset provides both halves:
+
+- derivatives root: `/Users/poldrack/data_unsynced/NSD/BIDS/derivatives/out/fmriprep`
+- FreeSurfer subject dir: `/Users/poldrack/data_unsynced/NSD/BIDS/derivatives/out/freesurfer/sub-01`
+
+There are 12 `space-T1w` boldrefs, all in `ses-nsd01`, `task-nsdcore`, runs 1
+through 12. The FreeSurfer directory sits outside the fmriprep tree, so
+`--fs-dir` is required; that is deliberate coverage of the flag. Runs 1 through
+12 also exercise numeric ordering against real filenames.
 
 ```bash
 uv run python -c "
 from fmriprepviz.discovery import find_boldrefs
-root = '/Users/poldrack/data_unsynced/network/bids/derivatives/fmriprep_25.2.4'
-for ref in find_boldrefs(root, 's336'):
-    print(ref.label, ref.path.name)
+root = '/Users/poldrack/data_unsynced/NSD/BIDS/derivatives/out/fmriprep'
+for ref in find_boldrefs(root, '01'):
+    print(ref.label)
 "
 ```
 
-Expected: five lines, ses-02 through ses-10 in order.
+Expected: 12 lines, `run-1` through `run-12` in numeric order — `run-2` must
+come before `run-10`, not after.
 
-- [ ] **Step 2: Run the full pipeline once a FreeSurfer directory is available**
+- [ ] **Step 2: Run the full pipeline**
 
 ```bash
 uv run fmriprepviz \
-  /Users/poldrack/data_unsynced/network/bids/derivatives/fmriprep_25.2.4 \
-  --subject s336 --fs-dir /path/to/freesurfer/sub-s336 \
-  -o /tmp/s336_qc.gif
+  /Users/poldrack/data_unsynced/NSD/BIDS/derivatives/out/fmriprep \
+  --subject 01 \
+  --fs-dir /Users/poldrack/data_unsynced/NSD/BIDS/derivatives/out/freesurfer/sub-01 \
+  -o /tmp/nsd_qc.gif
 ```
+
+This subject has one session with 12 runs, so the movie shows within-session
+drift rather than cross-session drift. That still exercises every part of the
+pipeline.
 
 - [ ] **Step 3: Inspect the result**
 
-Open `/tmp/s336_qc.html`, step through the five frames, and confirm:
+Open `/tmp/nsd_qc.html`, step through the 12 frames, and confirm:
 - the red contours follow the gray/white and gray/CSF boundaries
 - the contours do not move between frames
 - left and right are not flipped (compare against the `L`/`R` annotations)
