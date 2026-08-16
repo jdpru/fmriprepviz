@@ -7,7 +7,8 @@ from PIL import Image
 
 from fmriprepviz.cuts import select_cuts
 from fmriprepviz.discovery import find_boldrefs
-from fmriprepviz.render import FRAME_SIZE, render_frame
+from fmriprepviz.render import FRAME_SIZE, NoMaskOverlapError, render_frame
+from fmriprepviz.ribbon import SurfaceMasks
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
@@ -89,3 +90,46 @@ def test_one_row_per_display_mode(surface_masks, boldrefs):
         nib.load(boldrefs[0].path), surface_masks, single, boldrefs[0].label
     )
     assert Image.open(io.BytesIO(png)).size == FRAME_SIZE
+
+
+def test_non_overlapping_mask_is_reported(surface_masks, cuts, boldrefs):
+    """A pial mask that shares no world-space voxels with the display grid
+    must raise a clear error rather than silently falling back to
+    whole-volume intensity percentiles (which reintroduces the exact
+    cross-session flicker the windowing is meant to prevent).
+
+    upsample=False is required to reach this specific check: with the
+    default upsample=True, nilearn's own resample_to_img already raises
+    its own BoundingBoxError while placing the BOLD reference onto the
+    (badly shifted) mask grid, before this code path is ever reached.
+    """
+    shifted_affine = surface_masks.pial.affine.copy()
+    shifted_affine[:3, 3] += 1000.0
+    shifted_pial = nib.Nifti1Image(
+        np.asarray(surface_masks.pial.dataobj), shifted_affine
+    )
+    shifted_masks = SurfaceMasks(white=surface_masks.white, pial=shifted_pial)
+    with pytest.raises(NoMaskOverlapError):
+        render_frame(
+            nib.load(boldrefs[0].path),
+            shifted_masks,
+            cuts,
+            boldrefs[0].label,
+            upsample=False,
+        )
+
+
+def test_label_text_is_drawn_in_the_frame(surface_masks, cuts, boldrefs):
+    """A regression that dropped, mis-coloured or mis-positioned the label
+    would pass every other test, yet the label is the only thing telling a
+    viewer which session a frame shows.
+    """
+    boldref = nib.load(boldrefs[0].path)
+    first = _as_array(render_frame(boldref, surface_masks, cuts, "label-one"))
+    second = _as_array(render_frame(boldref, surface_masks, cuts, "label-two"))
+    top_rows = int(round(FRAME_SIZE[1] * 0.05))
+    first_strip = first[:top_rows]
+    second_strip = second[:top_rows]
+    assert not np.array_equal(first_strip, second_strip)
+    assert first_strip.std() > 0
+    assert second_strip.std() > 0
