@@ -12,7 +12,7 @@ from nilearn.image.resampling import BoundingBoxError
 from fmriprepviz.cuts import DEFAULT_N_CUTS, select_cuts
 from fmriprepviz.discovery import NoBoldRefsError, find_boldrefs
 from fmriprepviz.movie import DEFAULT_FPS, FFmpegNotFoundError, write_movie
-from fmriprepviz.render import NoMaskOverlapError, render_frame
+from fmriprepviz.render import NO_OVERLAP_MESSAGE, NoMaskOverlapError, render_frame
 from fmriprepviz.ribbon import (
     FreeSurferNotFoundError,
     load_surface_masks,
@@ -22,13 +22,6 @@ from fmriprepviz.viewer import write_html
 
 DEFAULT_OUTPUT = Path("qc.gif")
 DEFAULT_DISPLAY_MODE = "xyz"
-
-NO_OVERLAP_MESSAGE = (
-    "The pial mask and the BOLD reference do not overlap on the display "
-    "grid. This usually means the FreeSurfer ribbon and the BOLD reference "
-    "have mismatched affines, or that --fs-dir points at the wrong "
-    "FreeSurfer subject directory."
-)
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -21,6 +21,14 @@ CONTOUR_LINEWIDTH = 0.6
 WINDOW_PERCENTILES = (2.0, 98.0)
 
 
+NO_OVERLAP_MESSAGE = (
+    "The pial mask and the BOLD reference do not overlap on the display "
+    "grid. This usually means the FreeSurfer ribbon and the BOLD reference "
+    "have mismatched affines, or that --fs-dir points at the wrong "
+    "FreeSurfer subject directory."
+)
+
+
 class NoMaskOverlapError(RuntimeError):
     """The pial mask shares no voxels with the BOLD reference's display grid."""
 
@@ -72,12 +80,7 @@ def _window(display_img, mask_img) -> tuple[float, float]:
     data = np.asarray(display_img.dataobj, dtype=float)
     inside = data[np.asarray(mask.dataobj) > 0]
     if inside.size == 0:
-        raise NoMaskOverlapError(
-            "The pial mask and the BOLD reference do not overlap on the "
-            "display grid. This usually means the FreeSurfer ribbon and the "
-            "BOLD reference have mismatched affines, or that --fs-dir points "
-            "at the wrong FreeSurfer subject directory."
-        )
+        raise NoMaskOverlapError(NO_OVERLAP_MESSAGE)
     low, high = np.percentile(inside, WINDOW_PERCENTILES)
     return float(low), float(high)
 
