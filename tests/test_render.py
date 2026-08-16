@@ -9,7 +9,12 @@ from PIL import Image
 from conftest import BOLDREF_VOXEL_SIZE, PIAL_RADIUS_MM
 from fmriprepviz.cuts import select_cuts
 from fmriprepviz.discovery import find_boldrefs
-from fmriprepviz.render import FRAME_SIZE, NoMaskOverlapError, render_frame
+from fmriprepviz.render import (
+    FRAME_SIZE,
+    NoMaskOverlapError,
+    frame_size,
+    render_frame,
+)
 from fmriprepviz.ribbon import SurfaceMasks
 
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -374,7 +379,7 @@ def test_single_cut_per_orientation_lays_the_panels_side_by_side(
         nib.load(boldrefs[0].path), surface_masks, single, boldrefs[0].label
     )
     left, middle, right = _content_by_horizontal_third(png)
-    assert Image.open(io.BytesIO(png)).size == FRAME_SIZE
+    assert Image.open(io.BytesIO(png)).size == frame_size(single)
     assert left > 0.25 * middle, f"left third nearly empty: {left} vs {middle}"
     assert right > 0.25 * middle, f"right third nearly empty: {right} vs {middle}"
 
@@ -382,6 +387,51 @@ def test_single_cut_per_orientation_lays_the_panels_side_by_side(
 def test_multi_cut_layout_is_unchanged(surface_masks, cuts, boldrefs):
     """The seven-cut view keeps its row-per-orientation layout; only the
     single-cut case is rearranged."""
+    png = render_frame(
+        nib.load(boldrefs[0].path), surface_masks, cuts, boldrefs[0].label
+    )
+    assert Image.open(io.BytesIO(png)).size == FRAME_SIZE
+
+
+def _content_rows(png_bytes):
+    """Rows containing anything but background, ignoring the label strip."""
+    pixels = _as_array(png_bytes)
+    label_rows = int(round(pixels.shape[0] * 0.08))
+    body = pixels[label_rows:]
+    rows = np.nonzero((body.max(axis=2) > 20).any(axis=1))[0]
+    return rows, body.shape[0]
+
+
+def test_single_cut_frame_is_not_mostly_empty(surface_masks, boldrefs):
+    """Three slices laid side by side are width-limited, so a 600px-tall frame
+    leaves more than half its height black. That dead space shrinks the
+    anatomy on screen for any given display width, which is the whole
+    complaint the side-by-side layout was meant to answer.
+
+    The frame height should track the content. Crucially this must trim empty
+    space rather than shrink the picture, so the anatomy's own pixel height is
+    asserted not to regress: making the frame shorter until the panels become
+    height-limited would satisfy a fill-fraction check while making the slices
+    smaller, which is the opposite of the point.
+    """
+    single = select_cuts(surface_masks.pial, n_cuts=1)
+    png = render_frame(
+        nib.load(boldrefs[0].path), surface_masks, single, boldrefs[0].label
+    )
+    rows, body_height = _content_rows(png)
+    anatomy_height = rows.max() - rows.min()
+
+    assert anatomy_height >= 250, (
+        f"anatomy shrank to {anatomy_height}px; trimming must remove empty "
+        "space, not the picture"
+    )
+    fill = anatomy_height / body_height
+    assert fill >= 0.75, f"frame is {(1 - fill) * 100:.0f}% empty vertically"
+
+
+def test_multi_cut_frame_size_is_unchanged(surface_masks, cuts, boldrefs):
+    """Only the single-slice layout is retrimmed; rows of cuts still need the
+    taller frame."""
     png = render_frame(
         nib.load(boldrefs[0].path), surface_masks, cuts, boldrefs[0].label
     )

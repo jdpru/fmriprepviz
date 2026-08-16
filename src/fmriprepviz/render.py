@@ -13,8 +13,15 @@ import numpy as np  # noqa: E402
 from nilearn import image, plotting  # noqa: E402
 
 FIGSIZE = (12.0, 6.0)
+# Three slices side by side are limited by width, not height, so the tall
+# frame the stacked layout needs would leave over half of this one black.
+SINGLE_CUT_FIGSIZE = (12.0, 3.6)
 DPI = 100
 FRAME_SIZE = (int(FIGSIZE[0] * DPI), int(FIGSIZE[1] * DPI))
+SINGLE_CUT_FRAME_SIZE = (
+    int(SINGLE_CUT_FIGSIZE[0] * DPI),
+    int(SINGLE_CUT_FIGSIZE[1] * DPI),
+)
 CONTOUR_COLOR = "red"
 CONTOUR_LEVELS = [0.5]
 CONTOUR_LINEWIDTH = 0.6
@@ -38,8 +45,9 @@ def render_frame(boldref_img, masks, cuts, label: str, upsample: bool = True) ->
     display_img = _prepare(boldref_img, masks.pial, upsample)
     vmin, vmax = _window(display_img, masks.pial)
     nrows, ncols = _grid_shape(cuts)
+    figsize = SINGLE_CUT_FIGSIZE if _is_single_cut(cuts) else FIGSIZE
     figure, axes = plt.subplots(
-        nrows, ncols, figsize=FIGSIZE, dpi=DPI, facecolor="black"
+        nrows, ncols, figsize=figsize, dpi=DPI, facecolor="black"
     )
     try:
         for axis, (mode, coordinates) in zip(np.atleast_1d(axes), cuts.items()):
@@ -53,6 +61,10 @@ def render_frame(boldref_img, masks, cuts, label: str, upsample: bool = True) ->
         plt.close(figure)
 
 
+def _is_single_cut(cuts) -> bool:
+    return all(len(coordinates) == 1 for coordinates in cuts.values())
+
+
 def _grid_shape(cuts) -> tuple[int, int]:
     """Lay the orientations out in a row when each shows a single slice.
 
@@ -62,9 +74,17 @@ def _grid_shape(cuts) -> tuple[int, int]:
     the multi-cut view. Side by side, each panel gets a full share of the
     width instead.
     """
-    if all(len(coordinates) == 1 for coordinates in cuts.values()):
+    if _is_single_cut(cuts):
         return 1, len(cuts)
     return len(cuts), 1
+
+
+def frame_size(cuts) -> tuple[int, int]:
+    """Pixel dimensions of a frame drawn with these cuts.
+
+    Fixed for any one movie, since the cuts do not change between frames.
+    """
+    return SINGLE_CUT_FRAME_SIZE if _is_single_cut(cuts) else FRAME_SIZE
 
 
 def _prepare(boldref_img, reference_img, upsample: bool):
