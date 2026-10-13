@@ -105,16 +105,6 @@ Useful options:
 
 `-o qc.mp4` produces MP4 instead of GIF.
 
-To compare the same task's runs across sessions consecutively:
-
-```bash
-uv run fmriprepviz /path/to/fmriprep --subject 01 --order task -o qc.gif
-```
-
-Both order modes sort numeric session, acquisition and run labels numerically,
-so `run-2` precedes `run-10`. Filtering and the frame labels are unchanged;
-the movie and HTML viewer use the same selected order.
-
 ## Scope
 
 Only `space-T1w` boldrefs are supported. FreeSurfer surfaces exist solely in
